@@ -3,10 +3,9 @@
 Proyecto de Ciencia de Datos reproducible sobre los accidentes de tráfico
 gestionados por la Guàrdia Urbana de Barcelona.
 
-**Autoría:** [tu nombre y apellidos]
-**Máster:** [nombre del máster]
-**Módulo:** Visualización de datos y reproducibilidad (M8)
-**Curso:** 2025-2026
+[Ioana Bendris Greab]
+Data Visualization y Reproducibility 
+2025-2026
 
 ---
 
