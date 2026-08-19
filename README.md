@@ -3,8 +3,8 @@
 Proyecto de Ciencia de Datos reproducible sobre los accidentes de tráfico
 gestionados por la Guàrdia Urbana de Barcelona.
 
-[Ioana Bendris Greab]
-Data Visualization y Reproducibility 
+Ioana Bendris Greab - 
+Data Visualization y Reproducibility - 
 2025-2026
 
 ---
