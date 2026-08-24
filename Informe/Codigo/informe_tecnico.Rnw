@@ -1,0 +1,474 @@
+% !Rnw weave = knitr
+% =============================================================
+% Proyecto: Accidentes gestionados por la Guardia Urbana de Barcelona
+% Reto 2 - Punto 5: informe técnico con knitr
+%
+% Este documento está escrito en formato .Rnw: combina codigo LaTeX
+% con bloques de codigo R (chunks) que se ejecutan al compilar.
+% Los resultados númericos del texto no están escritos a mano, se
+% insertan mediante \Sexpr{}, de modo que se recalculan solos si
+% cambian los datos de origen. 
+%
+% PARA COMPILAR: abrir en RStudio y pulsar "Compile PDF".
+% Requiere una distribucion de LaTeX (tinytex).
+% =============================================================
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla,es-noquoting]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue}
+
+\title{Siniestralidad vial en Barcelona, 2019--2025\\
+       \large Informe técnico}
+\author{Ioana Bendris Greab}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+<<setup, include=FALSE>>=
+# Configura las opciones globales y carga los datos.
+
+library(knitr)
+library(tidyverse)
+library(scales)
+library(ggrepel)
+
+opts_chunk$set(
+  echo      = FALSE,    # no mostrar el código en el informe
+  warning   = FALSE,
+  message   = FALSE,
+  fig.path  = "figuras/",
+  fig.align = "center",
+  fig.pos   = "H",
+  out.width = "0.85\\textwidth"
+)
+
+# Ruta relativa a la raiz del proyecto: sin referencias locales
+accidentes <- readRDS("../../Datos/Base de datos depurada/accidentes_bcn_2019_2025.rds") |>
+  mutate(dia_semana = factor(
+    as.integer(dia_semana),
+    levels  = 1:7,
+    labels  = c("Lunes", "Martes", "Miércoles", "Jueves",
+                "Viernes", "Sábado", "Domingo"),
+    ordered = TRUE
+  ))
+
+col_gravedad <- c("Leve" = "#A8C4D9", "Grave" = "#E08B3C", "Mortal" = "#9E2A2B")
+
+theme_set(
+  theme_minimal(base_size = 10) +
+    theme(plot.title = element_text(face = "bold", size = 11),
+          panel.grid.minor = element_blank(),
+          legend.position = "bottom",
+          legend.title = element_blank())
+)
+
+# Función de formateo en convención española
+fmt <- function(x) format(x, big.mark = ".", decimal.mark = ",", trim = TRUE)
+
+# --------------------------------------------------------------
+# Indicadores que se insertaran en el texto mediante \Sexpr{}
+# --------------------------------------------------------------
+# Calcular aquí y no dentro del texto mantiene el documento
+# legible y garantiza coherencia. De este modo si una cifra 
+# aparece en varios sitios, procede siempre del mismo cálculo.
+
+n_total     <- nrow(accidentes)
+n_graves    <- sum(accidentes$numero_lesionats_greus)
+n_muertos   <- sum(accidentes$numero_morts)
+n_leves     <- sum(accidentes$numero_lesionats_lleus)
+pct_ciudad  <- 100 * mean(accidentes$gravedad != "Leve")
+
+acc_2019    <- sum(accidentes$nk_any == 2019)
+acc_2025    <- sum(accidentes$nk_any == 2025)
+var_volumen <- 100 * (acc_2025 - acc_2019) / acc_2019
+
+pct_2019 <- 100 * mean(accidentes$gravedad[accidentes$nk_any == 2019] != "Leve")
+pct_2025 <- 100 * mean(accidentes$gravedad[accidentes$nk_any == 2025] != "Leve")
+
+graves_2019 <- sum(accidentes$gravedad[accidentes$nk_any == 2019] == "Grave")
+graves_2025 <- sum(accidentes$gravedad[accidentes$nk_any == 2025] == "Grave")
+mort_2019   <- sum(accidentes$numero_morts[accidentes$nk_any == 2019])
+mort_2025   <- sum(accidentes$numero_morts[accidentes$nk_any == 2025])
+
+acc_2020    <- sum(accidentes$nk_any == 2020)
+caida_covid <- 100 * (acc_2020 - acc_2019) / acc_2019
+
+# Tabla por distrito, usada en varios puntos del informe
+por_distrito <- accidentes |>
+  filter(!is.na(nom_districte)) |>
+  group_by(nom_districte) |>
+  summarise(accidentes = n(),
+            pct        = 100 * mean(gravedad != "Leve"),
+            muertos    = sum(numero_morts),
+            .groups    = "drop")
+
+dis_max_vol  <- por_distrito |> slice_max(accidentes, n = 1)
+dis_max_pct  <- por_distrito |> slice_max(pct, n = 1)
+dis_min_pct  <- por_distrito |> slice_min(pct, n = 1)
+correlacion  <- cor(por_distrito$accidentes, por_distrito$pct)
+
+# Patrones temporales
+por_dia <- accidentes |>
+  group_by(dia_semana) |>
+  summarise(n = n(), pct = 100 * mean(gravedad != "Leve"), .groups = "drop")
+dia_max_vol <- por_dia |> slice_max(n, n = 1)
+dia_min_vol <- por_dia |> slice_min(n, n = 1)
+dia_max_pct <- por_dia |> slice_max(pct, n = 1)
+hora_pico   <- accidentes |> count(hora_dia) |> slice_max(n, n = 1)
+
+pct_victimas <- 100 * mean(accidentes$accidente_con_victimas)
+@
+
+\begin{abstract}
+\noindent
+Este informe analiza los \Sexpr{fmt(n_total)} accidentes de tráfico
+gestionados por la Guàrdia Urbana de Barcelona entre 2019 y 2025. El
+resultado principal es que la reducción del número de siniestros no se ha
+traducido en una reducción equivalente de su gravedad: mientras el volumen
+de accidentes descendió un \Sexpr{round(abs(var_volumen), 1)}\,\%, la
+proporción de siniestros graves o mortales pasó del
+\Sexpr{round(pct_2019, 2)}\,\% al \Sexpr{round(pct_2025, 2)}\,\%. El
+análisis territorial muestra además que volumen y riesgo son dimensiones
+independientes, con una correlación de apenas
+\Sexpr{round(correlacion, 3)} entre ambas.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =============================================================
+\section{Introducción y objetivos}
+% =============================================================
+
+La seguridad viaria constituye una de las competencias municipales con
+mayor impacto directo sobre la salud pública. Barcelona publica desde hace
+años los accidentes gestionados por su policía local, lo que permite
+analizar la evolución de la siniestralidad con un nivel de detalle
+territorial y temporal poco habitual.
+
+\subsection{Objetivo principal}
+
+Analizar la evolución y la distribución de la siniestralidad vial en
+Barcelona entre 2019 y 2025, con el fin de determinar en qué medida la
+reducción del número de accidentes se ha acompañado de una reducción
+equivalente de su gravedad, y qué zonas y momentos concentran el riesgo
+más alto.
+
+\subsection{Objetivos específicos}
+
+\begin{enumerate}
+  \item Describir la evolución temporal del número de accidentes y de su
+        gravedad, distinguiendo el efecto de la pandemia de la tendencia
+        de fondo posterior.
+  \item Comparar la siniestralidad entre los diez distritos, en volumen
+        absoluto y en proporción de accidentes graves.
+  \item Caracterizar los patrones temporales intrasemanales.
+  \item Localizar geográficamente los puntos de mayor acumulación de
+        accidentes graves.
+  \item Evaluar la calidad y las limitaciones del conjunto de datos.
+\end{enumerate}
+
+% =============================================================
+\section{Datos y método}
+% =============================================================
+
+Los datos proceden del conjunto \textit{Accidents gestionats per la
+Guàrdia Urbana a la ciutat de Barcelona}, publicado por el Ajuntament de
+Barcelona en el portal Open Data BCN bajo licencia Creative Commons
+Attribution 4.0. Se han utilizado los siete ficheros anuales del periodo
+2019--2025, que suman \Sexpr{fmt(n_total)} registros.
+
+\subsection{Depuración}
+
+La unificación de los ficheros anuales requirió resolver siete
+incidencias de homogeneidad. La más relevante afecta a la comparabilidad
+de la serie: \textbf{en 2024 y 2025 los valores cero se registran como
+celda vacía}, mientras que en los años anteriores se escribe un cero
+explícito. Interpretar esos blancos como dato desconocido habría supuesto
+descartar el 97\,\% de los accidentes recientes al clasificar la gravedad.
+La imputación como cero se validó comprobando la coherencia del resultado
+con la serie histórica de la ciudad.
+
+Otras incidencias resueltas: cambios en los nombres de columna entre años,
+columnas presentes solo en algunos ficheros, el valor $-1$ como código de
+dato no disponible, el campo \texttt{Codi\_barri} con formato incompatible
+en 2020, la inferencia automática de tipos que corrompía el identificador
+de expediente, y espacios sobrantes en los campos de texto.
+
+\subsection{Definición de gravedad}
+
+Los datos originales reparten la severidad en tres columnas de recuento
+independientes. Se derivó una variable ordinal de tres
+niveles: un accidente es \textit{mortal} si registra alguna persona
+fallecida, \textit{grave} si registra alguna herida grave sin fallecidos,
+y \textit{leve} en el resto de casos.
+
+% =============================================================
+\section{Resultados}
+% =============================================================
+
+\subsection{Panorama general}
+
+En el conjunto del periodo se registraron \Sexpr{fmt(n_total)} accidentes,
+que causaron \Sexpr{fmt(n_leves)} personas heridas leves,
+\Sexpr{fmt(n_graves)} heridas graves y \Sexpr{n_muertos} fallecidas. El
+\Sexpr{round(pct_victimas, 1)}\,\% de los siniestros registrados tuvo al
+menos una víctima, lo que indica que el conjunto recoge fundamentalmente
+accidentes con daños personales y no incidentes con daños materiales
+únicamente.
+
+<<tabla-anual, results='asis'>>=
+# --- TABLA RESUMEN CON INDICADORES -----------------------------
+
+tabla <- accidentes |>
+  group_by(Año = nk_any) |>
+  summarise(
+    Accidentes = n(),
+    `H. leves`  = sum(numero_lesionats_lleus),
+    `H. graves` = sum(numero_lesionats_greus),
+    Fallecidos  = sum(numero_morts),
+    `\\% grave/mortal` = 100 * mean(gravedad != "Leve"),
+    .groups = "drop"
+  )
+
+kable(
+  tabla,
+  format    = "latex",
+  booktabs  = TRUE,
+  digits    = c(0, 0, 0, 0, 0, 2),
+  format.args = list(big.mark = "."),
+  escape    = FALSE,
+  caption   = "Indicadores anuales de siniestralidad, 2019--2025",
+  linesep   = ""
+)
+@
+
+\subsection{Evolución temporal (objetivo 1)}
+
+El año 2020 marca una discontinuidad evidente: los accidentes cayeron un
+\Sexpr{round(abs(caida_covid), 1)}\,\% respecto a 2019 como consecuencia
+de las restricciones de movilidad. Lo relevante es que \textbf{el nivel
+prepandemia no se ha recuperado}: en 2025 se registraron
+\Sexpr{fmt(acc_2025)} accidentes, frente a los \Sexpr{fmt(acc_2019)} de
+2019.
+
+<<fig-evolucion, fig.cap="Evolución mensual del número de accidentes", fig.height=3>>=
+accidentes |>
+  mutate(mes = floor_date(fecha, "month")) |>
+  count(mes) |>
+  ggplot(aes(mes, n)) +
+  geom_line(color = "#2E5C8A", linewidth = 0.6) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(x = NULL, y = "Accidentes")
+@
+
+Sin embargo, la reducción del volumen no ha ido acompañada de una
+reducción proporcional de la gravedad. La figura~\ref{fig:fig-gravedad}
+contrapone ambas magnitudes: los accidentes graves aumentaron de
+\Sexpr{graves_2019} en 2019 a \Sexpr{graves_2025} en 2025, pese a
+producirse casi un tercio menos de siniestros. Los fallecidos, en cambio,
+descendieron de \Sexpr{mort_2019} a \Sexpr{mort_2025}.
+
+<<fig-gravedad, fig.cap="Volumen de accidentes frente a proporción de siniestros graves o mortales", fig.height=4>>=
+# --- GRAFICO CON LOS PRINCIPALES RESULTADOS --------------------
+# Se usan dos paneles apilados en lugar de un doble eje Y: la
+# relación entre ambas escalas es arbitraria y un eje doble
+# induciria al lector a interpretar cruces sin significado.
+# Compartir el eje X preserva la comparación sin engañar.
+
+accidentes |>
+  group_by(ano = nk_any) |>
+  summarise(`Número de accidentes`   = n(),
+            `Graves o mortales (\\%)` = 100 * mean(gravedad != "Leve"),
+            .groups = "drop") |>
+  pivot_longer(-ano) |>
+  ggplot(aes(ano, value)) +
+  geom_col(fill = "#2E5C8A", width = 0.6) +
+  facet_wrap(~ name, scales = "free_y", ncol = 1) +
+  scale_x_continuous(breaks = 2019:2025) +
+  labs(x = NULL, y = NULL)
+@
+
+Este resultado admite varias interpretaciones que los datos disponibles no
+permiten discriminar. Una hipótesis plausible es un cambio en la
+composición del parque circulante, con mayor presencia de motocicletas y
+vehículos de movilidad personal, cuyos usuarios están más expuestos en
+caso de colisión. Verificar esta hipotesis supondría tener datos sobre el
+tipo de vehículo implicado, datos ausentes en este conjunto.
+
+\subsection{Distribución territorial (objetivo 2)}
+
+El distrito con más accidentes es \Sexpr{as.character(dis_max_vol$nom_districte)},
+con \Sexpr{fmt(dis_max_vol$accidentes)} siniestros, más de una cuarta
+parte del total de la ciudad. Su gravedad relativa, sin embargo, es
+\Sexpr{round(dis_max_vol$pct, 2)}\,\%, próxima a la media municipal de
+\Sexpr{round(pct_ciudad, 2)}\,\%.
+
+El distrito con mayor gravedad relativa es
+\Sexpr{as.character(dis_max_pct$nom_districte)}
+(\Sexpr{round(dis_max_pct$pct, 2)}\,\%), y el de menor
+\Sexpr{as.character(dis_min_pct$nom_districte)}
+(\Sexpr{round(dis_min_pct$pct, 2)}\,\%).
+
+<<fig-distritos, fig.cap="Relación entre volumen de accidentes y gravedad relativa por distrito", fig.height=3.5>>=
+por_distrito |>
+  ggplot(aes(accidentes, pct)) +
+  geom_hline(yintercept = pct_ciudad, linetype = "dashed", color = "grey55") +
+  annotate("text", x = max(por_distrito$accidentes) * 0.5,
+           y = pct_ciudad, vjust = -0.7, hjust = 0, size = 2.6,
+           color = "grey40",
+           label = paste0("Media de la ciudad: ", round(pct_ciudad, 2), " %")) +
+  geom_point(size = 2.5, color = "#2E5C8A") +
+  ggrepel::geom_text_repel(aes(label = nom_districte), size = 2.6,
+                           color = "grey25", seed = 1,
+                           min.segment.length = 0.2) +
+  scale_x_continuous(labels = comma, expand = expansion(mult = 0.15)) +
+  scale_y_continuous(expand = expansion(mult = 0.2)) +
+  labs(x = "Número de accidentes", y = "Graves o mortales (%)")
+@
+
+La correlación de Pearson entre ambas magnitudes es de
+\Sexpr{round(correlacion, 3)}, prácticamente nula. \textbf{Volumen y
+riesgo son, por tanto, dimensiones independientes.} La implicación
+práctica es directa: priorizar las actuaciones únicamente en función del
+número de accidentes dejaría sin atender los distritos donde el riesgo por
+siniestro es mayor.
+
+Conviene subrayar que esta comparación no equivale a un ranking de
+peligrosidad. Sin datos sobre la intensidad de tráfico soportada por cada
+distrito, las cifras reflejan tanto el riesgo como la exposición.
+
+\subsection{Patrones temporales (objetivo 3)}
+
+El día con más accidentes es el \Sexpr{tolower(as.character(dia_max_vol$dia_semana))}
+(\Sexpr{fmt(dia_max_vol$n)}) y el que menos el
+\Sexpr{tolower(as.character(dia_min_vol$dia_semana))}
+(\Sexpr{fmt(dia_min_vol$n)}). La hora de máxima concentración son las
+\Sexpr{hora_pico$hora_dia}~h.
+
+Se repite aquí el patrón inverso observado en el análisis territorial: el
+\Sexpr{tolower(as.character(dia_max_pct$dia_semana))} presenta la mayor
+proporción de accidentes graves
+(\Sexpr{round(dia_max_pct$pct, 2)}\,\%) siendo uno de los días con menos
+siniestros. Que dos dimensiones independientes muestren la misma relación
+inversa refuerza la interpretación de fondo: menor densidad de tráfico se
+asocia a mayor velocidad y, con ella, a consecuencias más severas.
+
+<<fig-heatmap, fig.cap="Concentración de accidentes por hora y día de la semana", fig.height=3>>=
+accidentes |>
+  filter(!is.na(dia_semana), !is.na(hora_dia)) |>
+  count(dia_semana, hora_dia) |>
+  ggplot(aes(hora_dia, fct_rev(dia_semana), fill = n)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_fill_gradient(low = "#EAF2F8", high = "#1B3B5A",
+                      name = "Accidentes") +
+  scale_x_continuous(breaks = seq(0, 23, 3), expand = c(0, 0)) +
+  labs(x = "Hora del día", y = NULL) +
+  theme(panel.grid = element_blank())
+@
+
+\subsection{Localización del riesgo (objetivo 4)}
+
+<<tabla-vias, results='asis'>>=
+accidentes |>
+  filter(!is.na(nom_carrer)) |>
+  group_by(Vía = nom_carrer) |>
+  summarise(Accidentes = n(),
+            `Graves o mortales` = sum(gravedad != "Leve"),
+            .groups = "drop") |>
+  arrange(desc(Accidentes)) |>
+  head(8) |>
+  kable(format = "latex", booktabs = TRUE,
+        format.args = list(big.mark = "."),
+        caption = "Vías con mayor número de accidentes registrados",
+        linesep = "")
+@
+
+Los grandes ejes viarios estructuran la distribución del riesgo. La
+concentración en vías de alta capacidad resulta coherente con la
+interpretación anterior: son los viales donde se alcanzan velocidades
+mayores dentro del entorno urbano.
+
+% =============================================================
+\section{Calidad del dato (objetivo 5)}
+% =============================================================
+
+El conjunto presenta una cobertura muy alta en las variables esenciales.
+Únicamente el
+\Sexpr{round(100 * mean(is.na(accidentes$nom_districte)), 2)}\,\% de los
+registros carece de ubicación administrativa y el
+\Sexpr{round(100 * mean(is.na(accidentes$longitud)), 2)}\,\% de
+coordenadas geográficas válidas.
+
+La principal limitación no es la ausencia de datos, sino la
+\textbf{heterogeneidad de los criterios de registro entre años}. Los
+cambios documentados en el apartado 2 obligan a interpretar con cautela
+cualquier comparación que abarque el periodo completo.
+
+% =============================================================
+\section{Conclusiones}
+% =============================================================
+
+\begin{enumerate}
+  \item La siniestralidad vial en Barcelona ha descendido un
+        \Sexpr{round(abs(var_volumen), 1)}\,\% entre 2019 y 2025, sin
+        recuperar el nivel prepandemia.
+  \item Ese descenso no se ha traducido en menos víctimas graves: los
+        accidentes graves aumentaron de \Sexpr{graves_2019} a
+        \Sexpr{graves_2025}. Los fallecidos, en cambio, se redujeron de
+        \Sexpr{mort_2019} a \Sexpr{mort_2025}.
+  \item Volumen y gravedad son dimensiones territorialmente
+        independientes (correlación de \Sexpr{round(correlacion, 3)}), lo
+        que desaconseja priorizar actuaciones atendiendo solo al recuento
+        de siniestros.
+  \item Los momentos de menor tráfico concentran proporcionalmente más
+        accidentes graves, patrón que se observa tanto en la dimensión
+        semanal como en la territorial.
+\end{enumerate}
+
+% =============================================================
+\section*{Limitaciones}
+\addcontentsline{toc}{section}{Limitaciones}
+% =============================================================
+
+El conjunto recoge únicamente los siniestros gestionados por la Guàrdia
+Urbana, de modo que no incluye los accidentes no reportados. Al no
+disponerse de datos de intensidad de tráfico ni de desplazamientos, no es
+posible calcular tasas de riesgo por vehículo-kilómetro: todas las cifras
+se refieren a accidentes registrados, no a riesgo por desplazamiento. Por
+último, la ausencia de información sobre el tipo de vehículo implicado
+impide contrastar la hipótesis más plausible sobre el aumento de la
+gravedad.
+
+% =============================================================
+\section*{Reproducibilidad}
+\addcontentsline{toc}{section}{Reproducibilidad}
+% =============================================================
+
+Este documento se ha generado con \texttt{knitr}. Todas las cifras que
+aparecen en el texto se calculan al compilar mediante \verb|\Sexpr{}|, y
+todos los gráficos y tablas se producen a partir de los datos depurados en
+el momento de la compilación. 
+
+El código de depuración, el dashboard y este informe están disponibles en
+el repositorio del proyecto.
+
+<<sesion, echo=TRUE, comment=NA>>=
+# La información de sesion documenta las versiones exactas de R y de
+# los paquetes utilizados, requisito habitual en investigacion
+# reproducible para que un tercero pueda replicar el entorno.
+sessionInfo()$R.version$version.string
+@
+
+\end{document}

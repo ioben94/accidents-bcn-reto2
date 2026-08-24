@@ -1,0 +1,490 @@
+---
+title: "Siniestralidad vial en Barcelona entre 2019-2025"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme:
+      version: 4
+      bg: "#F7F8FA"
+      fg: "#2C3E50"
+      primary: "#2E5C8A"
+    social: menu
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+# ==============================================================
+# Proyecto: Accidentes gestionados por la Guardia Urbana de Barcelona
+# Reto 2 - Punto 4: dashboard interactivo
+#
+# Version con Shiny: incorpora filtros reactivos en la barra lateral
+# que recalculan simultaneamente todos los elementos del dashboard
+# 
+#
+# PARA EJECUTARLO: abrir este fichero en RStudio y pulsar
+# "Run Document". Requiere una sesion de R activa.
+#
+# Existe también una version estática autónoma en el mismo
+# directorio: dashboard_estatico.Rmd
+# ==============================================================
+
+library(flexdashboard)
+library(shiny)
+library(tidyverse)
+library(plotly)
+library(leaflet)
+library(scales)
+
+# Ruta relativa a la raiz del proyecto: no hay referencias locales
+accidentes <- readRDS("../../Datos/Base de datos depurada/accidentes_bcn_2019_2025.rds") |>
+  mutate(dia_semana = factor(
+    as.integer(dia_semana),
+    levels  = 1:7,
+    labels  = c("Lunes", "Martes", "Miércoles", "Jueves",
+                "Viernes", "Sábado", "Domingo"),
+    ordered = TRUE
+  ))
+
+# Paleta de gravedad: escala SECUENCIAL para una variable ordinal.
+# La saturacion aumenta y la luminosidad desciende conforme crece
+# la severidad. 
+col_gravedad <- c("Leve" = "#A8C4D9", "Grave" = "#E08B3C", "Mortal" = "#9E2A2B")
+
+# Tema comun a todos los graficos, para dar coherencia visual
+theme_dash <- theme_minimal(base_size = 11) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 12),
+    panel.grid.minor = element_blank(),
+    legend.position  = "bottom",
+    legend.title     = element_blank()
+  )
+
+# Formateo de números en convención española: punto para los miles
+# y coma para los decimales. Se define una unica vez para
+# garantizar coherencia en todo el dashboard.
+fmt <- function(x) {
+  format(x, big.mark = ".", decimal.mark = ",", trim = TRUE)
+}
+
+```
+
+Análisis {data-icon="fa-chart-line"}
+=======================================================================
+
+Inputs {.sidebar data-width=250}
+-----------------------------------------------------------------------
+
+### Filtros
+
+Todos los elementos del panel se recalculan simultáneamente al
+modificar cualquiera de estos filtros.
+
+```{r filtros}
+# --- INTERACCIÓN: FILTRAR --------------------------------------
+# Los tres controles están en la barra lateral aplicando el
+# principio Gestalt de región común: su aislamiento visual comunica
+# que actuan sobre el conjunto del dashboard, no sobre un grafico
+# concreto. Así, concentrarlos en un único lugar reduce el coste
+# cognitivo de la interacción.
+
+sliderInput(
+  "anos", "Periodo",
+  min   = 2019, max = 2025,
+  value = c(2019, 2025),
+  step  = 1, sep = ""
+)
+
+selectInput(
+  "distrito", "Distrito",
+  choices  = c("Toda la ciudad", sort(levels(accidentes$nom_districte))),
+  selected = "Toda la ciudad"
+)
+
+checkboxGroupInput(
+  "gravedad", "Gravedad",
+  choices  = c("Leve", "Grave", "Mortal"),
+  selected = c("Leve", "Grave", "Mortal")
+)
+
+hr()
+
+actionButton("reset", "Restablecer filtros", icon = icon("rotate-left"))
+
+# Botón de reinicio: permite volver al estado inicial sin desorientar
+# al usuario.
+observeEvent(input$reset, {
+  updateSliderInput(session, "anos", value = c(2019, 2025))
+  updateSelectInput(session, "distrito", selected = "Toda la ciudad")
+  updateCheckboxGroupInput(session, "gravedad",
+                           selected = c("Leve", "Grave", "Mortal"))
+})
+```
+
+---
+
+**Fuente:** Open Data BCN — Ajuntament de Barcelona.
+Licencia CC BY 4.0.
+
+```{r reactivo}
+# --- VISTAS VINCULADAS -----------------------------------------
+# Este único conjunto de datos reactivo alimenta todos los
+# elementos del dashboard. Es el mecanismo que hace que una acción
+# sobre un filtro se propague a los cuatro KPI y a los cuatro
+# gráficos de forma simultanea.
+
+datos <- reactive({
+  d <- accidentes |>
+    filter(
+      nk_any >= input$anos[1],
+      nk_any <= input$anos[2],
+      gravedad %in% input$gravedad
+    )
+  if (input$distrito != "Toda la ciudad") {
+    d <- d |> filter(nom_districte == input$distrito)
+  }
+  d
+})
+
+# Texto que refleja el filtro activo. Proporciona feedback
+# inmediato: el usuario sabe en todo momento que subconjunto
+# está viendo.
+etiqueta <- reactive({
+  paste0(input$distrito, " · ", input$anos[1], "-", input$anos[2])
+})
+```
+
+Row {data-height=140}
+-----------------------------------------------------------------------
+
+### Accidentes registrados
+
+```{r kpi1}
+# --- FUNCIÓN: MAGNITUD -----------------------------------------
+# Cuando el mensaje es un único número, cualquier codificación
+# gráfica anade ruido sin ganar precisión. El tamaño del texto
+# establece la jerarquia visual y la caja actua como enclosure,
+# agrupando cifra y etiqueta como una unidad.
+renderValueBox({
+  valueBox(
+    fmt(nrow(datos())),
+    caption = "Accidentes registrados",
+    icon    = "fa-car-burst",
+    color   = "#2E5C8A"
+  )
+})
+```
+
+### Heridos graves
+
+```{r kpi2}
+renderValueBox({
+  valueBox(
+    fmt(sum(datos()$numero_lesionats_greus)),
+    caption = "Personas heridas graves",
+    icon    = "fa-hospital",
+    color   = "#E08B3C"
+  )
+})
+```
+
+### Fallecidos
+
+```{r kpi3}
+renderValueBox({
+  valueBox(
+    sum(datos()$numero_morts),
+    caption = "Personas fallecidas",
+    icon    = "fa-triangle-exclamation",
+    color   = "#9E2A2B"
+  )
+})
+```
+
+### Gravedad relativa
+
+```{r kpi4}
+renderValueBox({
+  # Este indicador se calcula siempre sobre el total de accidentes,
+  # con independencia del filtro de gravedad. Su funcioó es dar
+  # contexto: si respetara el filtro, al desmarcar "Leve" mostraría
+  # un 100% carente de significado.
+  base <- accidentes |>
+    filter(nk_any >= input$anos[1], nk_any <= input$anos[2])
+  if (input$distrito != "Toda la ciudad") {
+    base <- base |> filter(nom_districte == input$distrito)
+  }
+  pct <- if (nrow(base) > 0) 100 * mean(base$gravedad != "Leve") else 0
+  valueBox(
+    paste0(round(pct, 2), "%"),
+    caption = "Accidentes graves o mortales",
+    icon    = "fa-percent",
+    color   = "#5B8FB9"
+  )
+})
+```
+
+Row {data-height=430}
+-----------------------------------------------------------------------
+
+### Evolución mensual
+
+```{r serie}
+# --- FUNCIÓN: EVOLUCIÓN TEMPORAL -------------------------------
+# Gráfico de líneas: el eje X es una variable continua ordenada
+# (tiempo) y la posición vertical codifica la magnitud, la
+# codificacion mas precisa disponible. Aprovecha la ley Gestalt de
+# continuidad: el ojo sigue la trayectoria sin esfuerzo.
+#
+# INTERACCIÓN: ggplotly añade tooltips (DETALLES BAJO DEMANDA) y
+# zoom sobre el eje temporal (ZOOM OPTICO).
+renderPlotly({
+  d <- datos() |>
+    mutate(mes = floor_date(fecha, "month")) |>
+    count(mes)
+
+  validate(need(nrow(d) > 0, "No hay datos con los filtros seleccionados"))
+
+  p <- ggplot(d, aes(mes, n,
+                     text = paste0(format(mes, "%B %Y"), "<br>",
+                                   n, " accidentes"),
+                     group = 1)) +
+    geom_line(color = "#2E5C8A", linewidth = 0.7) +
+    geom_point(size = 1, color = "#2E5C8A") +
+    scale_x_date(date_labels = "%Y") +
+    scale_y_continuous(limits = c(0, NA)) +
+    labs(title = etiqueta(), x = NULL, y = "Accidentes") +
+    theme_dash
+
+  ggplotly(p, tooltip = "text") |>
+    config(displayModeBar = FALSE)
+})
+```
+
+### Gravedad relativa por distrito
+
+```{r ranking}
+# --- FUNCIóN: RANKING ------------------------------------------
+# Gráfico lollipop: el mensaje es la posición relativa de cada
+# distrito frente a la media de la ciudad, no su magnitud absoluta.
+# Una barra invitaria a leer la magnitud de un porcentaje, que no es
+# lo relevante. Los distritos se ordenan por valor, de modo que la
+# ley de continuidad permite recorrer el ranking sin esfuerzo.
+#
+# Este grafico ignora deliberadamente el filtro de distrito: su
+# funcion es comparar y filtrarlo lo dejaría con una sola barra.
+# Si, respeta los filtros de periodo y gravedad.
+renderPlotly({
+  d <- accidentes |>
+    filter(nk_any >= input$anos[1], nk_any <= input$anos[2],
+           !is.na(nom_districte)) |>
+    group_by(nom_districte) |>
+    summarise(pct = 100 * mean(gravedad != "Leve"),
+              n   = n(), .groups = "drop")
+
+  validate(need(nrow(d) > 0, "Sin datos"))
+
+  media <- 100 * mean(
+    accidentes$gravedad[accidentes$nk_any >= input$anos[1] &
+                        accidentes$nk_any <= input$anos[2]] != "Leve"
+  )
+
+  p <- d |>
+    mutate(
+      destacado = nom_districte == input$distrito,
+      texto = paste0(nom_districte, "<br>",
+                     round(pct, 2), "% graves o mortales<br>",
+                     fmt(n), " accidentes")
+    ) |>
+    ggplot(aes(x = pct, y = fct_reorder(nom_districte, pct), text = texto)) +
+    geom_vline(xintercept = media, linetype = "dashed", color = "grey55") +
+    geom_segment(aes(x = 0, xend = pct,
+                     yend = fct_reorder(nom_districte, pct)),
+                 color = "grey80") +
+    # PUNTO FOCAL: el distrito seleccionado se resalta en color, de
+    # modo que se localiza de forma preatentiva sin buscarlo.
+    geom_point(aes(color = destacado), size = 3.5) +
+    scale_color_manual(values = c("TRUE" = "#9E2A2B", "FALSE" = "#E08B3C"),
+                       guide = "none") +
+    labs(title = paste0("Media ciudad: ", round(media, 2), "%"),
+         x = "Accidentes graves o mortales (%)", y = NULL) +
+    theme_dash
+
+  ggplotly(p, tooltip = "text") |>
+    config(displayModeBar = FALSE)
+})
+```
+
+Row {data-height=430}
+-----------------------------------------------------------------------
+
+### Concentración por hora y día de la semana
+
+```{r heatmap}
+# --- FUNCIÓN: DISTRIBUCIÓN en dos dimensiones ------------------
+# La frecuencia se codifica mediante saturación, propiedad adecuada
+# para un dato numerico ordenado.Las zonas calientes se detectan 
+# en menos de 250 ms sin recorrer la tabla celda a celda.
+# 
+#
+# LIMITACIÓN ASUMIDA: el color permite comparar magnitudes con menos
+# precisión que la posición. Se acepta porque el objetivo es
+# detectar el patrón; los valores exactos se ofrecen mediante
+# tooltip (DETALLES BAJO DEMANDA).
+renderPlotly({
+  d <- datos() |>
+    filter(!is.na(dia_semana), !is.na(hora_dia)) |>
+    count(dia_semana, hora_dia)
+
+  validate(need(nrow(d) > 0, "No hay datos con los filtros seleccionados"))
+
+  p <- d |>
+    mutate(texto = paste0(dia_semana, " a las ", hora_dia, "h<br>",
+                          n, " accidentes")) |>
+    ggplot(aes(hora_dia, fct_rev(dia_semana), fill = n, text = texto)) +
+    geom_tile(color = "white", linewidth = 0.3) +
+    scale_fill_gradient(low = "#EAF2F8", high = "#1B3B5A", name = "Accidentes") +
+    scale_x_continuous(breaks = seq(0, 23, 3), expand = c(0, 0)) +
+    labs(x = "Hora del día", y = NULL) +
+    theme_dash +
+    theme(panel.grid = element_blank())
+
+  ggplotly(p, tooltip = "text") |>
+    config(displayModeBar = FALSE)
+})
+```
+
+### Localización de los accidentes
+
+```{r mapa}
+# --- FUNCIÓN: ESPACIAL -----------------------------------------
+# Mapa de símbolos, no coropletico. La distinción importa: el
+# coropletico representa proporciones agregadas por zona, mientras
+# que aquí interesa la posición exacta del siniestro. Además, un
+# coropletico haria parecer comparables distritos de superficie muy
+# distinta.
+#
+# INTERACCION: zoom optico, desplazamiento (pan), capas de fondo y
+# detalles bajo demanda al pulsar cada punto.
+#
+# El agrupamiento en clusteres resuelve el solapamiento cuando se
+# muestran decenas de miles de puntos, y constituye un ejemplo de
+# ZOOM SEMANTICO: al ampliar no solo cambia el tamaño, sino que
+# aparece información nueva.
+renderLeaflet({
+  d <- datos() |>
+    filter(!is.na(longitud), !is.na(latitud))
+
+  validate(need(nrow(d) > 0, "No hay datos con los filtros seleccionados"))
+
+  # Con muchos puntos se agrupa; con pocos se muestran individuales
+  usar_cluster <- nrow(d) > 2000
+
+  pal <- colorFactor(palette = unname(col_gravedad),
+                     levels  = names(col_gravedad))
+
+  m <- leaflet(d) |>
+    addProviderTiles("CartoDB.Positron", group = "Mapa claro") |>
+    addProviderTiles("OpenStreetMap", group = "Callejero") |>
+    addLayersControl(
+      baseGroups    = c("Mapa claro", "Callejero"),
+      position      = "topright",
+      options       = layersControlOptions(collapsed = TRUE)
+    ) |>
+    setView(lng = 2.16, lat = 41.395, zoom = 12)
+
+  m <- m |>
+    addCircleMarkers(
+      lng = ~longitud, lat = ~latitud,
+      radius = 4, stroke = FALSE, fillOpacity = 0.6,
+      color = ~pal(gravedad),
+      clusterOptions = if (usar_cluster) markerClusterOptions() else NULL,
+      popup = ~paste0(
+        "<b>", nom_carrer, "</b><br>",
+        format(fecha, "%d/%m/%Y"), " a las ", hora_dia, "h<br>",
+        "Gravedad: ", gravedad, "<br>",
+        "Vehículos implicados: ", numero_vehicles_implicats
+      )
+    ) |>
+    addLegend("bottomright", pal = pal, values = ~gravedad,
+              title = "Gravedad", opacity = 0.8)
+
+  m
+})
+```
+
+Datos {data-icon="fa-table"}
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Resumen anual
+
+```{r tabla-anual}
+# Tabla de apoyo: ofrece los valores exactos que los gráficos
+# codifican de forma aproximada. Complementa la vista visual sin
+# competir con ella.
+renderTable({
+  datos() |>
+    group_by(Año = nk_any) |>
+    summarise(
+      Accidentes   = n(),
+      `Heridos leves`  = sum(numero_lesionats_lleus),
+      `Heridos graves` = sum(numero_lesionats_greus),
+      Fallecidos       = sum(numero_morts),
+      `% grave o mortal` = round(100 * mean(gravedad != "Leve"), 2),
+      .groups = "drop"
+    ) |>
+    mutate(Año = as.character(Año))
+}, striped = TRUE, hover = TRUE, width = "100%")
+```
+
+### Vías con más siniestros
+
+```{r tabla-calles}
+renderTable({
+  datos() |>
+    filter(!is.na(nom_carrer)) |>
+    count(Vía = nom_carrer, sort = TRUE) |>
+    head(15) |>
+    rename(Accidentes = n)
+}, striped = TRUE, hover = TRUE, width = "100%")
+```
+
+Metodología {data-icon="fa-circle-info"}
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Sobre estos datos
+
+**Fuente.** Conjunto *Accidents gestionats per la Guàrdia Urbana a la ciutat
+de Barcelona*, publicado por el Ajuntament de Barcelona en el portal Open
+Data BCN bajo licencia Creative Commons Attribution 4.0. Comprende 54.954
+accidentes registrados entre el 1 de enero de 2019 y el 31 de diciembre
+de 2025.
+
+**Definición de gravedad.** Los datos originales reparten la severidad en
+tres columnas de recuento independientes. Para el análisis se ha derivado
+una variable ordinal de tres niveles: un accidente es *mortal* si registra
+alguna persona fallecida, *grave* si registra alguna herida grave sin
+fallecidos, y *leve* en el resto de casos.
+
+**Depuración.** Los ficheros anuales presentan diferencias de estructura que
+han requerido armonización: cambios en los nombres de columna, campos que
+desaparecen a partir de 2021, y especialmente el registro de los valores
+cero como celda vacía en 2024 y 2025. Interpretar esos blancos como dato
+desconocido habría supuesto perder el 97% de los accidentes recientes al
+clasificar la gravedad.
+
+**Limitaciones.** El conjunto recoge únicamente los siniestros gestionados
+por la Guàrdia Urbana, de modo que no incluye los accidentes no reportados.
+Al no disponerse de datos de intensidad de tráfico ni de desplazamientos, no
+es posible calcular tasas de riesgo por vehículo-kilómetro: las cifras se
+refieren a accidentes registrados, no a riesgo por desplazamiento. El 0,42%
+de los registros carece de ubicación y el 0,08% de coordenadas válidas.
+
+**Reproducibilidad.** El código de depuración y de generación de este
+dashboard está disponible en el repositorio del proyecto.

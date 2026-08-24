@@ -4,3 +4,9 @@
 .Ruserdata
 .DS_Store
 .Rhistory
+*.log
+*.aux
+*.toc
+*.out
+*.synctex.gz
+*-concordance.tex
