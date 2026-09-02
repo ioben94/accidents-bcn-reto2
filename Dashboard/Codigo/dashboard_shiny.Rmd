@@ -16,6 +16,7 @@ runtime: shiny
 ```{r setup, include=FALSE}
 # ==============================================================
 # Proyecto: Accidentes gestionados por la Guardia Urbana de Barcelona
+# Nombre y Apellidos: Ioana Bendris Greab
 # Reto 2 - Punto 4: dashboard interactivo
 #
 # Version con Shiny: incorpora filtros reactivos en la barra lateral

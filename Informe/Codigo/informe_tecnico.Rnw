@@ -1,6 +1,7 @@
 % !Rnw weave = knitr
 % =============================================================
 % Proyecto: Accidentes gestionados por la Guardia Urbana de Barcelona
+% Nombre y Apellidos: Ioana Bendris Greab 
 % Reto 2 - Punto 5: informe técnico con knitr
 %
 % Este documento está escrito en formato .Rnw: combina codigo LaTeX

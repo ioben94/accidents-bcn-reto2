@@ -16,6 +16,7 @@ output:
 ```{r setup, include=FALSE}
 # ==============================================================
 # Proyecto: Accidentes gestionados por la Guardia Urbana de Barcelona
+# Nombre y Apellidos: Ioana Bendris Greab
 # Reto 2 - Punto 4: dashboard (versión estática autónoma)
 #
 # A diferencia de la versión con Shiny, este dashboard genera un

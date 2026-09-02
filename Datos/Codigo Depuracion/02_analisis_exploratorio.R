@@ -9,7 +9,7 @@
 # ya depurada por el script 01.
 #
 # Los graficos se guardan en "EDA/Graficos" en formato PNG,
-# para insertarse en el informe.
+# para insertarse en el informe
 #
 # ORDEN DE EJECUCION:
 #   1. Datos/Codigo Depuracion/01_importacion_depuracion.R

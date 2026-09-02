@@ -1,0 +1,337 @@
+---
+title: "Siniestralidad vial en Barcelona"
+subtitle: "Menos accidentes, pero más graves · 2019-2025"
+author: "Ioana Bendris Greab"
+date: "`r format(Sys.Date(), '%d de %B de %Y')`"
+output:
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    df_print: kable
+lang: es
+---
+
+<!--
+=================================================================
+Proyecto: Accidentes gestionados por la Guardia Urbana de Barcelona
+Nombre y Apellidos: Ioana Bendris Greab
+Reto 2 - Punto 6: presentacion con R Markdown
+
+
+PARA COMPILAR: pulsar "Knit" en RStudio. Genera un HTML que se abre
+en cualquier navegador. Se avanza con las flechas del teclado; la
+tecla "w" alterna el modo pantalla ancha y "f" el pantalla completa.
+=================================================================
+-->
+
+```{r setup, include=FALSE}
+library(knitr)
+library(tidyverse)
+library(scales)
+
+opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+               fig.align = "center", dev.args = list(bg = "transparent"))
+
+# Ruta relativa a la raiz del proyecto: sin referencias locales
+accidentes <- readRDS("../../Datos/Base de datos depurada/accidentes_bcn_2019_2025.rds") |>
+  mutate(dia_semana = factor(
+    as.integer(dia_semana),
+    levels  = 1:7,
+    labels  = c("Lunes", "Martes", "Miércoles", "Jueves",
+                "Viernes", "Sábado", "Domingo"),
+    ordered = TRUE
+  ))
+
+col_gravedad <- c("Leve" = "#A8C4D9", "Grave" = "#E08B3C", "Mortal" = "#9E2A2B")
+
+theme_set(
+  theme_minimal(base_size = 13) +
+    theme(plot.title = element_text(face = "bold"),
+          panel.grid.minor = element_blank(),
+          legend.position = "bottom",
+          legend.title = element_blank())
+)
+
+fmt <- function(x) format(x, big.mark = ".", decimal.mark = ",", trim = TRUE)
+
+# --- Indicadores que se insertan en el texto -------------------
+n_total    <- nrow(accidentes)
+n_graves   <- sum(accidentes$numero_lesionats_greus)
+n_muertos  <- sum(accidentes$numero_morts)
+pct_ciudad <- 100 * mean(accidentes$gravedad != "Leve")
+
+acc_2019 <- sum(accidentes$nk_any == 2019)
+acc_2020 <- sum(accidentes$nk_any == 2020)
+acc_2025 <- sum(accidentes$nk_any == 2025)
+var_vol  <- 100 * (acc_2025 - acc_2019) / acc_2019
+caida_covid <- 100 * (acc_2020 - acc_2019) / acc_2019
+
+pct_2019 <- 100 * mean(accidentes$gravedad[accidentes$nk_any == 2019] != "Leve")
+pct_2025 <- 100 * mean(accidentes$gravedad[accidentes$nk_any == 2025] != "Leve")
+
+graves_2019 <- sum(accidentes$gravedad[accidentes$nk_any == 2019] == "Grave")
+graves_2025 <- sum(accidentes$gravedad[accidentes$nk_any == 2025] == "Grave")
+mort_2019   <- sum(accidentes$numero_morts[accidentes$nk_any == 2019])
+mort_2025   <- sum(accidentes$numero_morts[accidentes$nk_any == 2025])
+
+por_distrito <- accidentes |>
+  filter(!is.na(nom_districte)) |>
+  group_by(nom_districte) |>
+  summarise(accidentes = n(),
+            pct = 100 * mean(gravedad != "Leve"), .groups = "drop")
+
+dis_max_vol <- por_distrito |> slice_max(accidentes, n = 1)
+dis_max_pct <- por_distrito |> slice_max(pct, n = 1)
+dis_min_pct <- por_distrito |> slice_min(pct, n = 1)
+correlacion <- cor(por_distrito$accidentes, por_distrito$pct)
+
+por_dia     <- accidentes |>
+  group_by(dia_semana) |>
+  summarise(n = n(), pct = 100 * mean(gravedad != "Leve"), .groups = "drop")
+dia_max_vol <- por_dia |> slice_max(n, n = 1)
+dia_max_pct <- por_dia |> slice_max(pct, n = 1)
+hora_pico   <- accidentes |> count(hora_dia) |> slice_max(n, n = 1)
+```
+
+## El punto de partida
+
+Barcelona publica cada año los accidentes gestionados por su policía local.
+Entre 2019 y 2025 se registraron **`r fmt(n_total)` siniestros**.
+
+La pregunta que guía este proyecto es:
+
+> Si cada vez hay menos accidentes, ¿significa eso que las calles son
+> más seguras?
+
+<br>
+
+**Fuente.** Open Data BCN — Ajuntament de Barcelona.
+Licencia Creative Commons Attribution 4.0. Siete ficheros anuales,
+`r fmt(n_total)` registros.
+
+## Objetivos
+
+**Objetivo principal**
+
+Determinar en qué medida la reducción del número de accidentes se ha
+acompañado de una reducción equivalente de su gravedad y qué zonas y
+momentos concentran el riesgo más alto.
+
+**Objetivos específicos**
+
+1. Describir la evolución temporal del volumen y de la gravedad.
+2. Comparar la siniestralidad entre los diez distritos.
+3. Caracterizar los patrones temporales intrasemanales.
+4. Localizar los puntos de mayor acumulación de accidentes graves.
+5. Evaluar la calidad y las limitaciones del conjunto de datos.
+
+## Qué escondían los datos {.smaller}
+
+La unificación de los siete ficheros anuales requirió resolver siete
+incidencias de homogeneidad. La más relevante afecta directamente a los
+resultados:
+
+> **En 2024 y 2025 los valores cero se registran como celda vacía.**
+
+En los años anteriores un accidente sin fallecidos escribe un `0`
+explícito. Interpretar esos blancos como *dato desconocido* habría
+supuesto descartar el **97 %** de los accidentes recientes al clasificar
+la gravedad.
+
+Otras incidencias resueltas: cambios en los nombres de columna,
+columnas que desaparecen a partir de 2021, el valor `-1` como código de
+ausencia, un campo con formato incompatible en 2020, la inferencia
+automática de tipos que corrompía el identificador, y espacios sobrantes
+en los campos de texto.
+
+## Los números del periodo
+
+```{r tabla}
+# --- TABLA RESUMEN CON INDICADORES -----------------------------
+accidentes |>
+  group_by(Año = nk_any) |>
+  summarise(
+    Accidentes         = n(),
+    `Heridos leves`    = sum(numero_lesionats_lleus),
+    `Heridos graves`   = sum(numero_lesionats_greus),
+    Fallecidos         = sum(numero_morts),
+    `% grave o mortal` = round(100 * mean(gravedad != "Leve"), 2),
+    .groups = "drop"
+  ) |>
+  mutate(across(c(Accidentes, `Heridos leves`), fmt)) |>
+  kable(align = "lrrrrr")
+```
+
+<br>
+
+En total: **`r fmt(n_graves)`** personas heridas graves y
+**`r n_muertos`** fallecidas.
+
+## La pandemia marcó un antes y un después
+
+```{r serie, fig.height=3.6, fig.width=9}
+accidentes |>
+  mutate(mes = floor_date(fecha, "month")) |>
+  count(mes) |>
+  ggplot(aes(mes, n)) +
+  geom_line(color = "#2E5C8A", linewidth = 0.7) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(x = NULL, y = "Accidentes")
+```
+
+En 2020 los accidentes cayeron un **`r round(abs(caida_covid), 1)` %**
+respecto a 2019. Cinco años después el nivel prepandemia **no se ha
+recuperado**: `r fmt(acc_2025)` accidentes en 2025 frente a
+`r fmt(acc_2019)` en 2019.
+
+## Pero la gravedad ha ido en dirección contraria
+
+```{r grafico-principal, fig.height=4.2, fig.width=9}
+# --- GRAFICO CON LOS PRINCIPALES RESULTADOS --------------------
+
+# Dos paneles apilados en lugar de un doble eje Y: la relacion
+# entre ambas escalas es arbitraria y un eje doble induciria al
+# lector a interpretar cruces sin significado.
+accidentes |>
+  group_by(ano = nk_any) |>
+  summarise(`Número de accidentes` = n(),
+            `Graves o mortales (%)` = 100 * mean(gravedad != "Leve"),
+            .groups = "drop") |>
+  pivot_longer(-ano) |>
+  ggplot(aes(ano, value)) +
+  geom_col(fill = "#2E5C8A", width = 0.6) +
+  facet_wrap(~ name, scales = "free_y", ncol = 2) +
+  scale_x_continuous(breaks = 2019:2025) +
+  labs(x = NULL, y = NULL)
+```
+
+El volumen desciende un **`r round(abs(var_vol), 1)` %**, pero la
+proporción de siniestros graves o mortales pasa del
+**`r round(pct_2019, 2)` %** al **`r round(pct_2025, 2)` %**.
+
+## En términos absolutos
+
+|  | 2019 | 2025 | Variación |
+|:--|:--:|:--:|:--:|
+| **Accidentes graves** | `r graves_2019` | **`r graves_2025`** | +`r round(100 * (graves_2025 - graves_2019) / graves_2019)` % |
+| **Personas fallecidas** | `r mort_2019` | **`r mort_2025`** | −`r round(100 * (mort_2019 - mort_2025) / mort_2019)` % |
+
+<br>
+
+**Menos muertes, pero más lesiones graves.** Los datos no permiten
+determinar la causa: verificar la hipótesis más plausible, un cambio en la
+composición del parque circulante, supondría conocer el tipo de vehículo
+implicado, información de la que no se dispone en este conjunto.
+
+## Volumen y riesgo no van de la mano
+
+```{r distritos, fig.height=3.8, fig.width=9}
+por_distrito |>
+  ggplot(aes(accidentes, pct)) +
+  geom_hline(yintercept = pct_ciudad, linetype = "dashed", color = "grey55") +
+  annotate("text", x = max(por_distrito$accidentes) * 0.55,
+           y = pct_ciudad, vjust = -0.6, hjust = 0, size = 3.2,
+           color = "grey40",
+           label = paste0("Media de la ciudad: ",
+                          round(pct_ciudad, 2), " %")) +
+  geom_point(size = 3, color = "#2E5C8A") +
+  ggrepel::geom_text_repel(aes(label = nom_districte), size = 3.2,
+                           color = "grey25", seed = 1,
+                           min.segment.length = 0.2) +
+  scale_x_continuous(labels = comma, expand = expansion(mult = 0.15)) +
+  scale_y_continuous(expand = expansion(mult = 0.2)) +
+  labs(x = "Número de accidentes", y = "Graves o mortales (%)")
+```
+
+`r as.character(dis_max_vol$nom_districte)` concentra
+`r fmt(dis_max_vol$accidentes)` accidentes con una gravedad del
+`r round(dis_max_vol$pct, 2)` %.
+`r as.character(dis_max_pct$nom_districte)` lidera el riesgo
+(`r round(dis_max_pct$pct, 2)` %) con la cuarta parte de siniestros.
+**Correlación: `r round(correlacion, 3)`.**
+
+## El mismo patrón en la semana
+
+```{r dias, fig.height=3.4, fig.width=9}
+por_dia |>
+  mutate(desviacion = pct - pct_ciudad) |>
+  ggplot(aes(dia_semana, desviacion, fill = desviacion > 0)) +
+  geom_col(width = 0.65) +
+  geom_hline(yintercept = 0, color = "grey30") +
+  scale_fill_manual(values = c("TRUE" = "#E08B3C", "FALSE" = "#7FA8C9"),
+                    guide = "none") +
+  labs(x = NULL, y = "Puntos porcentuales sobre la media")
+```
+
+El `r tolower(as.character(dia_max_vol$dia_semana))` registra más
+accidentes que ningún otro día (`r fmt(dia_max_vol$n)`), pero el
+`r tolower(as.character(dia_max_pct$dia_semana))` presenta la mayor
+proporción de graves (`r round(dia_max_pct$pct, 2)` %). La hora punta
+son las **`r hora_pico$hora_dia` h**.
+
+## Dos dimensiones, una misma lectura
+
+El patrón inverso aparece **tanto en el territorio como en el calendario**:
+
+- **Territorio.** `r as.character(dis_max_vol$nom_districte)` lidera en volumen, `r as.character(dis_max_pct$nom_districte)` en gravedad.
+- **Calendario.** El `r tolower(as.character(dia_max_vol$dia_semana))` concentra más siniestros, el `r tolower(as.character(dia_max_pct$dia_semana))` los más graves.
+
+Dos evidencias independientes apuntan a lo mismo:
+
+> Donde hay más tráfico se producen más accidentes, pero de menor gravedad.
+> Donde hay menos, los siniestros son menos frecuentes y más severos.
+
+**Implicación práctica:** priorizar las actuaciones atendiendo solo al
+recuento de siniestros dejaría sin atender las zonas y los momentos donde el
+riesgo por accidente es mayor.
+
+## Conclusiones
+
+1. La siniestralidad ha descendido un **`r round(abs(var_vol), 1)` %**
+   entre 2019 y 2025, sin recuperar el nivel prepandemia.
+
+2. Ese descenso **no se ha traducido en menos víctimas graves**: los
+   accidentes graves pasaron de `r graves_2019` a `r graves_2025`. Los
+   fallecidos, en cambio, se redujeron de `r mort_2019` a `r mort_2025`.
+
+3. Volumen y gravedad son dimensiones **territorialmente
+   independientes** (correlación de `r round(correlacion, 3)`).
+
+4. Los momentos de menor tráfico concentran proporcionalmente **más
+   accidentes graves**.
+
+## Lo que estos datos no pueden decir
+
+**Cobertura.** Solo accidentes gestionados por la Guàrdia Urbana. No
+incluye los siniestros no reportados.
+
+**Ausencia de denominador.** Sin datos de intensidad de tráfico ni de
+desplazamientos no es posible calcular tasas por vehículo-kilómetro.
+Todas las cifras se refieren a **accidentes registrados**, no a riesgo
+por desplazamiento. La comparación entre distritos refleja, por tanto,
+tanto el riesgo como la exposición.
+
+**Comparabilidad.** El cambio de criterio de registro entre años obliga
+a interpretar con cuidado la serie completa.
+
+**Sin tipo de vehículo.** Impide contrastar la hipótesis más plausible
+sobre el aumento de la gravedad.
+
+## Reproducibilidad
+
+Todo el proyecto es reproducible de principio a fin:
+
+- **Datos originales** conservados sin modificar en el repositorio.
+- **Código de depuración** comentado, con las siete incidencias
+  documentadas.
+- **Dashboard** en dos versiones: interactiva con Shiny y estática
+  autónoma.
+- **Informe técnico** generado con knitr.
+- **Esta presentación**, escrita en R Markdown.
+
+Las cifras de este documento se calculan al compilar. 
+
+## {.flexbox .vcenter}
+
+**Gracias!**

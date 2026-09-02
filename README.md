@@ -14,9 +14,9 @@ Data Visualization y Reproducibility -
 ### Objetivo principal
 
 Analizar la evolución y la distribución de la siniestralidad vial gestionada
-por la Guàrdia Urbana de Barcelona entre 2019 y 2025, con el fin de
+por la Guàrdia Urbana de Barcelona entre 2019 y 2025, para
 identificar en qué medida la reducción del número de accidentes se ha
-acompañado de una reducción equivalente de su gravedad, y qué zonas y
+acompañado de una reducción equivalente de su gravedad y qué zonas y
 momentos concentran el riesgo más alto.
 
 ### Objetivos específicos
@@ -37,8 +37,8 @@ momentos concentran el riesgo más alto.
    acumulación de accidentes graves dentro de la ciudad.
 
 5. **Calidad del dato.** Evaluar la calidad y las limitaciones del conjunto
-   de datos abierto, documentando los cambios de criterio de registro entre
-   años y su efecto sobre la comparabilidad de la serie.
+   de datos, documentando los cambios de criterio de registro entre
+   años y cómo ha efectado la comparabilidad de la serie.
 
 ---
 
@@ -120,8 +120,8 @@ específico 5).
 | Adivinación automática de tipos que corrompe el identificador | Todos | Lectura forzada como texto |
 | Espacios sobrantes y dobles espacios en campos de texto | Todos | Normalizados con `str_squish()` |
 
-La incidencia más relevante es la tercera: si las celdas vacías de 2024-2025
-se interpretaran como dato desconocido, se perdería el 97% de los accidentes
+La incidencia más relevante es la tercera porque si las celdas vacías de 2024-2025
+se interpretaran como dato desconocido, perdería el 97% de los accidentes
 de esos dos años al clasificar la gravedad.
 
 ---
@@ -145,8 +145,8 @@ Además de las variables originales, el script genera las siguientes:
 
 ## 7. Limitaciones
 
-El conjunto de datos recoge únicamente los accidentes **gestionados por la
-Guàrdia Urbana**, de modo que no incluye los siniestros no reportados. Al no
+El conjunto de datos recoge únicamente los accidentes gestionados por la
+Guàrdia Urbana, de modo que no incluye los siniestros no reportados. Al no
 disponerse de datos de intensidad de tráfico ni de desplazamientos, no es
-posible calcular tasas de riesgo por vehículo-kilómetro: las conclusiones se
+posible calcular tasas de riesgo por vehículo-kilómetro, así que las conclusiones se
 refieren a accidentes registrados, no a riesgo real por desplazamiento.

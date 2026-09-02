@@ -16,7 +16,7 @@
 # El script funciona en cualquier máquina que clone el repositorio.
 #
 # --------------------------------------------------------------
-# QUÉ SE HA DETECTADO EN LOS DATOS ORIGINALES?
+# QUÉ SE HA DETECTADO EN LOS DATOS ORIGINALES
 # --------------------------------------------------------------
 # La inspección previa de los siete ficheros reveló siete problemas
 # y que este script se resuelven:
