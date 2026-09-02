@@ -1,7 +1,10 @@
 ---
 title: "Planificación de una visualización de datos"
 subtitle: "Siniestralidad vial en Barcelona entre 2019-2025"
-author: "Ioana Bendris Greab"
+author: |
+  | Ioana Bendris Greab
+  | Docente: Mireia Ribera
+  | Módulo 8 — Visualización de datos
 date: "`r format(Sys.Date(), '%d de %B de %Y')`"
 output:
   pdf_document:
