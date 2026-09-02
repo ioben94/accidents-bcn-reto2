@@ -6,25 +6,27 @@ date: "`r format(Sys.Date(), '%d de %B de %Y')`"
 output:
   pdf_document:
     toc: true
-    toc_depth: 2
+    toc_depth: 1
     number_sections: true
     fig_caption: true
     latex_engine: xelatex
 lang: es
 fontsize: 11pt
-geometry: margin=2.5cm
+geometry: margin=2.2cm
 header-includes:
   - \usepackage{float}
   - \renewcommand{\contentsname}{Índice}
+  - \usepackage{parskip}
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
+  Sys.setlocale("LC_TIME", "es_ES.UTF-8"),
   echo    = FALSE,      
   warning = FALSE,      
   message = FALSE,     
-  fig.pos = "H",       
-  out.width = "95%",
+  fig.pos = "htbp",       
+  out.width = "60%",
   fig.align = "center"
 )
 
@@ -81,7 +83,7 @@ tibble(
 
 El proyecto parte de la siguiente pregunta: si en Barcelona se producen cada vez menos accidentes, significa esto que sus calles son más seguras? Para poder responder a esta pregunta se debe mirar no solo el número de siniestros sino también su gravedad, la distribución territorial y sus patrones temporales. 
 
-El principal objetivo es analizar la evolución y la distribución de la siniestralidad vial gestionada por la Guàrdia Civil entre el año 2019 y el 2025 para determinar si la reducción del número de accidentes se ha acompañado por una reducción de su gravedad y qué zonas y momentos del día concentran el riesgo más alto. 
+El principal objetivo es analizar la evolución y la distribución de la siniestralidad vial gestionada por la Guàrdia Urbana entre el año 2019 y el 2025 para determinar si la reducción del número de accidentes se ha acompañado por una reducción de su gravedad y qué zonas y momentos del día concentran el riesgo más alto. 
 
 De este objetivo principal se derivan cinco objetivos específicos que guiarán el análisis exploratorio y el diseño de la visualización: 
 
@@ -93,8 +95,6 @@ De este objetivo principal se derivan cinco objetivos específicos que guiarán 
 
 
 
-\newpage
-
 # Tarea 1. Análisis exploratorio de datos
 
 Este apartado sigue una aproximación bottom-up: se parte de los datos disponibles para descubrir qué contienen y qué relaciones admiten ser representadas. Primero se describe cada campo del conjunto, después se examina la calidad de los datos y las incidencias detectadas durante la depuración y por último se exploran las distribuciones y las relaciones mediante una serie de gráficos. De estos gráficos se extraen los hallazgos que orientarán el diseño del dashboard. 
@@ -105,16 +105,19 @@ Este apartado sigue una aproximación bottom-up: se parte de los datos disponibl
 tibble(
   Variable = names(accidentes),
   Tipo     = map_chr(accidentes, ~ class(.x)[1]),
-  Valores  = map_int(accidentes, n_distinct),
   `% NA`   = round(100 * map_dbl(accidentes, ~ mean(is.na(.x))), 2)
 ) |>
+  filter(!Variable %in% c("fichero_origen", "nom_mes",
+                          "descripcio_dia_setmana", "numero_expedient",
+                          "codi_districte", "total_lesionados",
+                          "accidente_con_victimas", "es_causa_vianant")) |>
   kable(caption = "Inventario de variables de la base depurada")
 ```
 
 La base depurada contiene 29 variables, que se pueden agrupar en cuatro bloques según su función: 
 (1) Identificación. El campo numero_expediente es una cadena de texto con formato 2019S000001 que identifica de forma única cada siniestro. Se conserva por trazabilidad, aunque realmente no interviene en el análisis. La variable fichero_origen se ha añadido durante la depuración para poder saber de qué fichero anual procede cada fila, que facilita ver incoherencias entre años. 
 
-(2) Varialbes territoriales. El distrito nom_districte es una variable categórica nominal de diez niveles, sin ningún orden intrínseco. El barrio nom_barri es también una variable nominal, con 73 niveles y el nombre de la calle nom_carrer alcanza 6.031 valores distintos. Las coordenadas longitud y latitud son variables numéricas continuas y se expresan en grados decimales sobre el sistema WGS84, el estándar habitual el cartografia web. Su rango se limita aproximadamente entre 2,06 y 2,22 de longitud y entre 41,3 y 41,5 de latitud. 
+(2) Variables territoriales. El distrito y el barrio son categóricas nominales, de diez y 73 niveles respectivamente; el nombre de la calle alcanza 6.031 valores distintos. Las coordenadas longitud y latitud son numéricas continuas expresadas en grados decimales sobre el sistema WGS84, con rango limitado al término municipal. 
 
 (3) Variables temporales. El año nk_any y el mes mes_any, el día del mes dia_mes y la hora hora_dia son variables numéricas discretas. La hora además es una variable cíclica porque las 23h y las 0h son consecutivas aunque sus valores estén en extremos opuestos. Lo mismo ocurre con el mes. A partir de estos campos se ha construido la variable fecha, de tipo fecha, y que permite ordenar periodos. De esta variable se ha derivado dia_semana (categórica ordinal), fin_de_semana (categórica nominal binaria) y franja_horaria (categorica ordinal). El campo descripcio_torn distingue mañana, tarde y noche y es una variable ordinal. 
 
@@ -189,17 +192,9 @@ Una hipótesis plausible de estos resultados podría ser un cambio en la composi
 circulante, con mayor presencia de motocicletas y vehículos de movilidad personal, cuyos usuarios están más expuestos en caso de colisión que quienes viajan en un automóvil. Contrastarla supondría saber el tipo de vehículo implicado, información de la que no dispone este conjunto. Por esta razón este hallazgo es simplemente una asociación observada y no una relación causal establecida.
 
 
-```{r fig-estacionalidad, fig.cap="Estacionalidad: media mensual de accidentes"}
-include_graphics("EDA/Graficos/03_estacionalidad.png")
-```
-
 ### Dimensión territorial
 
-Los tres gráficos siguientes deben leerse juntos, porque cuentan una historia que ninguno de ellos revela por separado.
-
-```{r fig-distrito-volumen, fig.cap="Volumen de accidentes por distrito"}
-include_graphics("EDA/Graficos/04_distrito_volumen.png")
-```
+Los dos gráficos siguientes deben leerse juntos, porque cuentan una historia que ninguno de ellos revela por separado.
 
 ```{r fig-distrito-gravedad, fig.cap="Proporción de accidentes graves o mortales por distrito"}
 include_graphics("EDA/Graficos/05_distrito_gravedad.png")
@@ -209,11 +204,11 @@ include_graphics("EDA/Graficos/05_distrito_gravedad.png")
 include_graphics("EDA/Graficos/06_correlacion_distrito.png")
 ```
 
-El primer gráfico muestra que el Eixample concentra 15.080 accidentes, más de una cuarta parte de los siniestros de toda la ciudad, muy por delante de Sant Martí (6.872) y Sants-Montjuïc (6.168). Es un resultado esperado ya que es el distrito más poblado, más denso y atravesado por los principales ejes viarios.
+El Eixample concentra 15.080 accidentes, más de una cuarta parte de los siniestros de toda la ciudad muy por delante de Sant Martí (6.872) y Sants-Montjuïc (6.168). Es un resultado esperado ya que es el distrito más poblado, más denso y atravesado por los principales ejes viarios.
 
-El segundo gráfico cambia por completo el retrato. Cuando se atiende a la proporción de accidentes graves o mortales, el Eixample cae a la zona media con un 2,59 %, prácticamente en la media municipal del 2,62 %. Quien encabeza el ranking es Horta-Guinardó, con un 3,41 %, siendo apenas el quinto distrito en volumen. Le sigue Les Corts con un 3,06 %. En el extremo opuesto, Sant Andreu presenta la tasa más baja de la ciudad (1,96 %), seguido de Gràcia (2,01 %).
+En el primer gráfico podemos observar que cuando se atiende a la proporción de accidentes graves o mortales, el Eixample cae a la zona media con un 2,59 %, prácticamente en la media municipal del 2,62 %. Quien encabeza el ranking es Horta-Guinardó, con un 3,41 %, siendo apenas el quinto distrito en volumen. Le sigue Les Corts con un 3,06 %. En el extremo opuesto, Sant Andreu presenta la tasa más baja de la ciudad (1,96 %), seguido de Gràcia (2,01 %).
 
-El tercer gráfico confirma que no se trata de una casualidad: la correlación de Pearson entre el número de accidentes de un distrito y su gravedad relativa es de 0,097, prácticamente nula. Esto nos dice que volumen y riesgo son dimensiones independientes.
+El segundo gráfico confirma que no se trata de una casualidad: la correlación de Pearson entre el número de accidentes de un distrito y su gravedad relativa es de 0,097, prácticamente nula. Esto nos dice que volumen y riesgo son dimensiones independientes.
 
 Sabiendo lo anterior, un panel que mostrara únicamente recuentos absolutos llevaría a concentrar todos los recursos en el Eixample y a ignorar por completo los distritos donde cada accidente tiene más probabilidades de acabar en una lesión grave. Este hallazgo es el que justifica que el dashboard debe representar ambas dimensiones y no solo el volumen.
 
@@ -237,15 +232,11 @@ Que el mismo patrón inverso aparezca en dos dimensiones independientes, el terr
 
 ### Consecuencias y dimensión geográfica
 
-```{r fig-vehiculos, fig.cap="Gravedad según el número de vehículos implicados"}
-include_graphics("EDA/Graficos/09_vehiculos_gravedad.png")
-```
-
 ```{r fig-mapa, fig.cap="Localización de los accidentes graves y mortales"}
 include_graphics("EDA/Graficos/10_mapa_puntos.png")
 ```
 
-El gráfico de vehículos implicados muestra que la mayoría de los siniestros involucran a dos vehículos (36.808 casos), seguidos a distancia por los de un solo vehículo (13.615). Estos últimos, salidas de vía, atropellos, caídas, presentan una severidad relativa mayor, coherente con la interpretación anterior, son sucesos donde no hay una colisión que absorba energía.
+Respecto al número de vehículos implicados, la mayoría de los siniestros involucran a dos vehículos (36.808 casos), seguidos a distancia por los de un solo vehículo (13.615). Estos últimos, salidas de vía, atropellos, caídas, presentan una severidad relativa mayor, que encaja con la interpretación anterior: son sucesos donde no hay una colisión que absorba energía.
 
 Conviene añadir un dato que condiciona la lectura de todo el conjunto: el 90,3 % de los accidentes registrados tuvo al menos una víctima. El conjunto no es, por tanto, un censo de todos los accidentes de la ciudad, sino fundamentalmente de aquellos con daños personales o que requirieron intervención policial. En total, el periodo acumula 61.474 personas heridas leves, 1.418 graves y 115 fallecidas.
 
@@ -267,7 +258,7 @@ Cuatro, una por cada objetivo específico susceptible de representación gráfic
 Campos descartados. 
 El número postal y el nombre de la vía se han excluido por resultar demasiado granulares para el nivel de decisión de la audiencia. Por ejemplo, un técnico que planifica actuaciones trabaja con distritos y ejes, no con portales concretos. La causa del peatón se descarta por su cobertura desigual entre años, que impediría comparaciones fiables. Las coordenadas UTM son redundantes respecto a longitud y latitud, y estas últimas son además el formato que necesitan las librerías de cartografía web. Por último, el número de vehículos implicados, aunque analíticamente interesante, no responde a ninguna de las preguntas planteadas por la audiencia y se ha dejado fuera para no sobrecargar el panel.
 
-\newpage
+
 
 # Tarea 2. Audiencia y objetivo
 
@@ -311,13 +302,7 @@ tibble(
 
 Las seis preguntas de la tabla corresponden con un objetivo específico y con un elemento concreto del dashboard, de manera que ningún gráfico ocupa espacio sin responder a una necesidad identificada.
 
-Las dos primeras abordan la dimensión temporal y están deliberadamente separadas. Preguntar si ha disminuido la siniestralidad y preguntar si hay menos víctimas graves parecen la misma cuestión, pero el análisis exploratorio ha demostrado que sus respuestas divergen. Formularlas por separado obliga al panel a mostrar ambas magnitudes.
-
-La tercera y la cuarta preguntan se centran en dónde intervenir y cuándo. Son las preguntas que un técnico de movilidad necesita responder para justificar una propuesta de actuación.
-
-La quinta se va al nivel de detalle máximo que permiten los datos, la localización concreta del siniestro y es la que justifica la inclusión de un mapa interactivo en lugar de una simple tabla por distritos.
-
-La sexta es la que justifica la interacción. Si todas las preguntas fueran de alcance municipal, un panel estático bastaría. Al preguntar si los patrones de riesgo son iguales en todos los distritos, se hace necesario que el usuario pueda filtrar y comparar y que ese filtro se propague a todos los gráficos simultáneamente.
+Las dos primeras abordan la dimensión temporal y están deliberadamente separadas: parecen la misma cuestión, pero el análisis exploratorio ha demostrado que sus respuestas divergen y formularlas por separado obliga al panel a mostrar ambas magnitudes. La tercera y la cuarta se centran en dónde y cuándo intervenir, que es lo que un técnico necesita para justificar una actuación, y la quinta desciende al nivel de detalle máximo que permiten los datos. La sexta merece un comentario aparte porque es la que justifica la interacción. Si todas fueran de alcance municipal, un panel estático bastaría. Al preguntar si los patrones de riesgo son iguales en todos los distritos, se hace necesario que el usuario pueda filtrar y que ese filtro se propague a todos los gráficos.
 
 Preguntas que se quedan fuera del alcance
 
@@ -327,8 +312,6 @@ Tres cuestiones quedan fuera:
 - ¿Qué distrito es objetivamente más peligroso? Requeriría normalizar por intensidad de tráfico o por desplazamientos, información no disponible.
 - ¿Han funcionado las medidas adoptadas en un punto concreto? Exigiría conocer la fecha de implantación de cada actuación, que se desconoce en este conjunto.
 
-
-\newpage
 
 # Tarea 3. Selección de gráficos y codificación
 
@@ -360,12 +343,9 @@ La codificación elegida es simplemente texto numérico de gran tamaño, sin nin
 
 Serie temporal
 
-Su función es mostrar la evolución temporal, respondiendo a las preguntas 1 y 2.
+Se ha optado por un gráfico de líneas: el eje horizontal representa el tiempo, variable continua ordenada y el vertical el número de accidentes, numérica discreta en escala de razón. La magnitud se codifica mediante la posición vertical, la codificación perceptivamente más precisa según la jerarquía de Cleveland y McGill (1984) y la línea aprovecha la ley Gestalt de continuidad.
 
-Se ha optado por un gráfico de líneas: el eje horizontal representa el tiempo, una variable continua ordenada y el vertical el número de accidentes, una variable numérica discreta en escala de razón. La magnitud se codifica mediante la posición vertical, que es la codificación perceptivamente más precisa de las disponibles según la jerarquía establecida por Cleveland y 
-McGill (1984). La línea que une los puntos aprovecha la ley Gestalt de continuidad: el ojo recorre la trayectoria sin esfuerzo consciente.
-
-El eje vertical comienza en cero. En un gráfico de líneas esta decisión es discutible, ya que truncar el eje permite apreciar mejor las variaciones pequeñas. Se ha mantenido el cero porque el mensaje que interesa transmitir es precisamente la magnitud de la caída de 2020, y truncar el eje la exageraría.
+El eje vertical empieza en cero. En un gráfico de líneas la decisión es discutible, pero se ha mantenido porque el mensaje es precisamente la magnitud de la caída de 2020 y truncar el eje la exageraría.
 
 Ranking de distritos
 
@@ -375,16 +355,9 @@ Se ha elegido un gráfico de tipo lollipop: un punto por distrito unido al eje m
 
 La ordenación por valor explota de nuevo la ley de continuidad, permitiendo recorrer el ranking de un vistazo. Y la línea discontinua que marca la media municipal actúa como punto focal: al introducir una referencia, convierte la lectura de una simple comparación entre distritos en una comparación por desviación, mucho más informativa. Esta línea va explícitamente etiquetada.
 
-Mapa de calor de hora y día
+Mapa de calor 
 
-Su función es mostrar la distribución sobre dos dimensiones categóricas simultáneas, respondiendo a la pregunta 4.
-
-Las dos variables categóricas, hora del día y día de la semana, se sitúan en los ejes, y la frecuencia se codifica mediante la saturación del color con una escala secuencial monocroma. La elección responde a la naturaleza del dato: se trata de un valor numérico ordenado, de modo que el color debe variar en intensidad y no en tono, ya que un cambio de tono sugeriría categorías 
-distintas en lugar de más o menos cantidad.
-
-El fundamento perceptivo es que la intensidad es una propiedad preatentiva: las zonas de mayor concentración se detectan en menos de 250 milisegundos, sin necesidad de recorrer la cuadrícula celda por celda. 
-
-Existe una limitación que conviene remarcar: el color permite comparar magnitudes con bastante menos precisión que la posición. Se acepta el compromiso porque el objetivo de este gráfico es detectar el patrón, no leer valores exactos, y esos valores se ofrecen igualmente mediante tooltip al situar el cursor sobre cada celda.
+Hora del día y día de la semana se sitúan en los ejes y la frecuencia se codifica mediante la saturación con una escala secuencial monocroma: al tratarse de un valor numérico ordenado, el color debe variar en intensidad y no en tono, ya que un cambio de tono sugeriría categorías distintas. El fundamento es que la intensidad es una propiedad preatentiva, de modo que las zonas de mayor concentración se detectan sin recorrer la cuadrícula celda por celda.
 
 Mapa de puntos
 
@@ -397,7 +370,7 @@ La codificación principal es la posición en dos dimensiones sobre coordenadas 
 Elementos descartados
 
 Se han descartado otros gráficos como el gráfico de estacionalidad mensual. Este aunque revela un patrón claro, no responde a ninguna de las seis preguntas planteadas. El de vehículos implicados es analíticamente interesante pero también secundario respecto a los objetivos. Y el diagrama de dispersión que cruza volumen y gravedad por distrito, tiene uno de los hallazgos centrales, pero implica leer dos ejes simultáneamente y se ha considerado que supone una carga cognitiva importante para un panel de consulta rápida y se ha dejado para este informe, no el dashboard.
-⸻
+
 
 ## Codificación del color
 
@@ -440,7 +413,7 @@ Coordenadas geográficas. Se expresan en grados decimales sobre el sistema WGS84
 
 Unidad de análisis. En todo el trabajo, cada registro equivale a un accidente, no a una víctima ni a un vehículo. Es una precisión necesaria: un mismo siniestro puede haber causado varias personas heridas, de modo que el número de accidentes y el número de víctimas no son intercambiables.
 
-\newpage
+
 
 # Tarea 4. Disposición e interacción
 
@@ -479,9 +452,9 @@ El zoom y el desplazamiento del mapa combinan zoom óptico y pan, permitiendo de
 
 El selector de capa base del mapa aplica el modelo de capas, permitiendo alternar entre un fondo cartográfico simplificado y un callejero detallado según el nivel de contexto que el usuario necesite.
 
-Una decisión de diseño corregida
+Decisión de diseño corregida
 
-Durante la construcción del prototipo detecté y que ilustras que las vistas vinculadas no deben aplicarse de forma automática a todos los elementos.
+Durante la construcción del prototipo detecté un problema que señala que las vistas vinculadas no deben aplicarse de forma automática a todos los elementos.
 
 En el diseño inicial, el indicador de gravedad relativa respondía a todos los filtros, incluido el de gravedad. La consecuencia era que, al desmarcar la categoría «leve», el indicador mostraba un 100 %. Técnicamente era correcto, ya que el 100 % de lo mostrado era efectivamente grave o mortal, pero susceptible a leerse como si el 100 % de los accidentes de Barcelona fueran graves.
 
@@ -492,15 +465,15 @@ justifica su existencia. En su lugar, el distrito seleccionado se resalta en un 
 
 El coste cognitivo de la interacción
 
-La interacción es la gran aportación del medio digital, pero no es gratuita: cada control que se añade exige del usuario una decisión y una carga de memoria. Se han adoptado cinco medidas para mitigar ese coste.
+La interacción no es gratuita, cada control exige del usuario una decisión y una carga de memoria. Se han adoptado cinco medidas para mitigarla:
+(1) Todos los filtros concentrados en un único lugar.
+(2) Estado inicial que responde ya a la pregunta principal sin interactuar.
+(3) Controles con convenciones estándar, sin mecanismos que exijan aprendizaje.
+(4) Título de cada gráfico reflejando el filtro activo, como retroalimentación.
+(5) Botón de reinicio para volver al estado inicial.
 
-Todos los filtros se concentran en un único lugar, nunca dispersos junto a los gráficos que afectan. El estado inicial del panel responde a la pregunta principal sin necesidad de tocar nada, de modo que un usuario que solo quiera el panorama general no tiene que interactuar. Los controles siguen convenciones estándar, deslizador para el tiempo, desplegable para categorías, 
-casillas para selección múltiple, evitando cualquier mecanismo que requiera aprendizaje. El título de cada gráfico refleja el filtro activo, proporcionando retroalimentación inmediata sobre qué subconjunto se está viendo. Y un botón de reinicio permite volver al estado inicial sin 
-desorientarse.
+Se ha descartado la navegación jerárquica hasta el nivel de barrio: añadiría un nivel que la audiencia no necesita.
 
-Se ha descartado la navegación jerárquica hasta el nivel de barrio (drill down). Sería viable, pero añadiría un nivel de navegación que la audiencia no necesita.
-
-\newpage
 
 # Tarea 5. Bocetos iniciales
 
@@ -539,7 +512,6 @@ Los cuatro indicadores responden a las preguntas 1 y 2 en su nivel más inmediat
 La pregunta 6 es la única que ningún gráfico resuelve por sí solo. Se responde mediante el selector de distrito de la barra lateral: al propagarse a todos los elementos del panel, permite comprobar si los patrones observados en el conjunto de la ciudad se reproducen en cada territorio. 
 
 
-\newpage
 
 # Conclusiones
 
@@ -550,7 +522,6 @@ El segundo hallazgo relevante es que volumen y riesgo constituyen dimensiones in
 
 Estos resultados han condicionado directamente el diseño propuesto. Un dashboard que mostrara únicamente recuentos absolutos ocultaría el hallazgo principal, de modo que la visualización representa siempre ambas dimensiones en paralelo: el volumen y la gravedad relativa. La disposición de los elementos sigue una progresión de lo general a lo específico y la interacción permite comprobar si los patrones municipales se reproducen en cada territorio, que es la pregunta que ningún gráfico estático puede responder.
 
-El proceso ha mostrado también que las aproximaciones bottom-up y top-down se necesitan mutuamente. Sin el análisis exploratorio previo, el diseño habría partido de la premisa equivocada de que menos accidentes equivale a más seguridad. Sin haber definido antes la audiencia y sus preguntas, el panel se habría llenado de gráficos interesantes pero inútiles para quien debe tomar decisiones.
 
 # Limitaciones
 
