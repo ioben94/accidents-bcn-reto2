@@ -24,7 +24,6 @@ header-includes:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  Sys.setlocale("LC_TIME", "es_ES.UTF-8"),
   echo    = FALSE,      
   warning = FALSE,      
   message = FALSE,     
