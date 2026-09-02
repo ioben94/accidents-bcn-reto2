@@ -91,7 +91,9 @@ Repositorio
 3. Instalar las dependencias:
 
    ```r
-   install.packages(c("tidyverse", "janitor"))
+   install.packages(c("tidyverse", "janitor", "scales", "ggrepel",
+                   "flexdashboard", "shiny", "plotly", "leaflet",
+                   "DT", "knitr", "rmarkdown"))
    ```
 
 4. Ejecutar el script de depuración:
